@@ -37,7 +37,7 @@ from yolov8.ultralytics.yolo.utils.checks import check_file, check_imgsz, check_
 from yolov8.ultralytics.yolo.utils.files import increment_path
 from yolov8.ultralytics.yolo.utils.torch_utils import select_device
 from yolov8.ultralytics.yolo.utils.ops import Profile, non_max_suppression, scale_boxes, process_mask, process_mask_native
-from yolov8.ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
+from yolov8.ultralytics.yolo.utils.plotting import Annotator, colors
 
 from trackers.multi_tracker_zoo import create_tracker
 
@@ -45,26 +45,26 @@ from trackers.multi_tracker_zoo import create_tracker
 @torch.no_grad()
 def run(
         source='0',
-        yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
+        yolo_weights=WEIGHTS / 'yolov5l6.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
         tracking_config=None,
-        imgsz=(640, 640),  # inference size (height, width)
+        imgsz=(1280, 1280),  # inference size (height, width)
         conf_thres=0.25,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        show_vid=False,  # show results
-        save_txt=False,  # save results to *.txt
-        save_conf=False,  # save confidences in --save-txt labels
-        save_crop=False,  # save cropped prediction boxes
-        save_trajectories=False,  # save trajectories for each track
-        save_vid=False,  # save confidences in --save-txt labels
+        show_vid=True,  # show results
+        save_txt=True,  # save results to *.txt
+        save_conf=True,  # save confidences in --save-txt labels
+        save_crop=True,  # save cropped prediction boxes
+        save_trajectories=True,  # save trajectories for each track
+        save_vid=True,  # save confidences in --save-txt labels
         nosave=False,  # do not save images/videos
         classes=None,  # filter by class: --class 0, or --class 0 2 3
         agnostic_nms=False,  # class-agnostic NMS
         augment=False,  # augmented inference
-        visualize=False,  # visualize features
+        visualize=True,  # visualize features
         update=False,  # update all models
         project=ROOT / 'runs' / 'track',  # save results to project/name
         name='exp',  # save results to project/name
@@ -250,7 +250,6 @@ def run(
                             with open(txt_path + '.txt', 'a') as f:
                                 f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
                                                                bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
-
                         if save_vid or save_crop or show_vid:  # Add bbox/seg to image
                             c = int(cls)  # integer class
                             id = int(id)  # integer id
@@ -326,7 +325,7 @@ def parse_opt():
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--show-vid', action='store_true', help='display tracking video results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-    parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
+    parser.add_argument('--save_conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
     parser.add_argument('--save-trajectories', action='store_true', help='save trajectories for each track')
     parser.add_argument('--save-vid', action='store_true', help='save video tracking results')
