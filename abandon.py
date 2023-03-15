@@ -20,8 +20,8 @@ def meancolor(img,x_min,x_max,y_min,y_max):
 
     x_min,x_max,y_min,y_max = int(x_min),int(x_max),int(y_min),int(y_max)
 
-    x =img.shape[0]
-    y = img.shape[1]
+    y =img.shape[0]
+    x = img.shape[1]
     if (x_min <= 0):
         x_min = 0
     if (x_max >= x-1):
@@ -99,7 +99,7 @@ class Entity:
 
   def get_frame_immobile(self): return self.frame_immobile
 
-class LaunchAbandon:
+class LanceurAlerte:
   def __init__(self, printer):
     self.listEntity = []
     self.printer = printer
@@ -116,7 +116,7 @@ class LaunchAbandon:
 
   def pred_in_list(self, output):
     object_id = int(output[5])
-    if object_id == 0: # 0 => Person,   we only want the luggage 
+    if object_id == 1: # 0 => luggage,    1 => person,    we only want the luggage maybe float, to see if that poses a problem
       return -1
     elif object_id != 24 and object_id != 26 and object_id != 28 and object_id!= 63 and object_id != 64 :
       return -2
@@ -142,15 +142,15 @@ class LaunchAbandon:
     pass
 
   def analyse_outputs(self, outputs, image): #x1, x2, y1, y2, track_id, class_id
-    liste = []
+    list = []
     if self.printer: print("\n\nstart analysis of predictions")
     outputs = add_center(outputs) # index 6, 7
     outputs = add_color(outputs, image) # index 8, 9, 10
     for output in outputs:
       color = self.analyse_entity_v5(output)
-      liste.append(color)
+      list.append(color)
     self.analyse_list()
-    return liste
+    return list
 
   def analyse_entity_v5(self, output):
     index = self.pred_in_list(output)

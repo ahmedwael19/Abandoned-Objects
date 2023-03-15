@@ -1,21 +1,59 @@
+
 import argparse
-import cv2
 import os
+import sys
+from pathlib import Path
+import platform
+import numpy as np
+
+import cv2
+import torch
+import torch.backends.cudnn as cudnn
+
 # limit the number of cpus used by high performance libraries
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 from abandon import *
 
-import sys
-import platform
-import numpy as np
-from pathlib import Path
-import torch
-import torch.backends.cudnn as cudnn
+
+
+
+## YOLO
+import logging
+from yolov8.ultralytics.nn.autobackend import AutoBackend
+from yolov8.ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams
+from yolov8.ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
+from yolov8.ultralytics.yolo.utils import DEFAULT_CFG, LOGGER, SETTINGS, callbacks, colorstr, ops
+from yolov8.ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow, print_args, check_requirements
+from yolov8.ultralytics.yolo.utils.files import increment_path
+from yolov8.ultralytics.yolo.utils.torch_utils import select_device, time_sync
+from yolov8.ultralytics.yolo.utils.ops import Profile, non_max_suppression, scale_boxes, process_mask, process_mask_native
+from yolov8.ultralytics.yolo.utils.plotting import Annotator, colors
+
+
+## Tracking
+from trackers.multi_tracker_zoo import create_tracker
+
+
+### DATABASE 
+import psycopg2
+from datetime import datetime, timezone
+
+print('Connecting to the PostgreSQL database...')
+conn = psycopg2.connect(
+    host="localhost",
+    database="action_activity",
+    user="postgres",
+    password=" ")
+
+cur = conn.cursor()
+
+
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # yolov5 strongsort root directory
@@ -30,24 +68,15 @@ if str(ROOT / 'trackers' / 'strongsort') not in sys.path:
 
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-import logging
-from yolov8.ultralytics.nn.autobackend import AutoBackend
-from yolov8.ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams
-from yolov8.ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
-from yolov8.ultralytics.yolo.utils import DEFAULT_CFG, LOGGER, SETTINGS, callbacks, colorstr, ops
-from yolov8.ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow, print_args, check_requirements
-from yolov8.ultralytics.yolo.utils.files import increment_path
-from yolov8.ultralytics.yolo.utils.torch_utils import select_device
-from yolov8.ultralytics.yolo.utils.ops import Profile, non_max_suppression, scale_boxes, process_mask, process_mask_native
-from yolov8.ultralytics.yolo.utils.plotting import Annotator, colors
 
-from trackers.multi_tracker_zoo import create_tracker
-
+### Run function
 
 @torch.no_grad()
+
+
 def run(
         source='0',
-        yolo_weights=WEIGHTS / 'yolov5l6.pt',  # model.pt path(s),
+        yolo_weights=WEIGHTS / 'yolov5s_trained_lauggage_online.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
         tracking_config=None,
@@ -79,8 +108,7 @@ def run(
         dnn=False,  # use OpenCV DNN for ONNX inference
         vid_stride=1,  # video frame-rate stride
         retina_masks=False,
-):
-
+    ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in (VID_FORMATS)
@@ -100,6 +128,7 @@ def run(
     save_dir = increment_path(Path(project) / exp_name, exist_ok=exist_ok)  # increment run
     (save_dir / 'tracks' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+
     # Load model
     device = select_device(device)
     is_seg = '-seg' in str(yolo_weights)
@@ -107,7 +136,7 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    # Dataloader
+  # Dataloader
     bs = 1
     if webcam:
         show_vid = check_imshow(warn=True)
@@ -130,7 +159,10 @@ def run(
             vid_stride=vid_stride
         )
     vid_path, vid_writer, txt_path = [None] * bs, [None] * bs, [None] * bs
-    AbandonLauncher = LanceurAlerte(True)  ## Added
+    
+    AbandonLauncher = LaunchAbandon(True) # Lanceur d'alerte est défini ici, False peu d'output, True pour le max d'informations
+
+    ## Run Inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
 
     # Create as many tracking instances as there are video sources
@@ -143,8 +175,8 @@ def run(
                 tracker_list[i].model.warmup()
     outputs = [None] * bs
 
+
     # Run tracking
-    #model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile(), Profile())
     curr_frames, prev_frames = [None] * bs, [None] * bs
     for frame_idx, batch in enumerate(dataset):
@@ -156,7 +188,6 @@ def run(
             im /= 255.0  # 0 - 255 to 0.0 - 1.0
             if len(im.shape) == 3:
                 im = im[None]  # expand for batch dim
-
         # Inference
         with dt[1]:
             preds = model(im, augment=augment, visualize=visualize)
@@ -214,25 +245,24 @@ def run(
                         det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], shape).round()  # rescale boxes to im0 size
                 else:
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+         
 
+                # Print results
+                for c in det[:, -1].unique():
+                    n = (det[:, -1] == c).sum()  # detections per class
+                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+                
+                confs = det[:, 4]
 
-                # pass detections to strongsort. Added the array part and the Abandonded.
+                # pass detections to strongsort
                 with dt[3]:
-                   # outputs = tracker_list[i].update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0) # outputs = x1, x2, y1, y2, track_id, class_id
                     outputs= tracker_list[i].update(det.cpu(), im0) ## Correct??
                     outputs= np.array(outputs)
-                    outputs = outputs[::-1]
                     outputs = (outputs)[:,:-1]
                 coloration = AbandonLauncher.analyse_outputs(outputs, im0) ## Added - The abandon detection!!
-                # Changed. Added confs
-                for c in np.unique(outputs[:, -1]):
-                    n = (outputs[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-                confs = det[:, 4]
-                clss = det[:, 5] ## Added
- 
+                
                 # draw boxes for visualization
-                if len(outputs[i]) > 0:
+                if len(outputs) > 0:
                     
                     if is_seg:
                         # Mask plotting
@@ -243,20 +273,21 @@ def run(
                             255 if retina_masks else im[i]
                         )
                     
-                    for j, (output,conf) in enumerate(zip(outputs,confs)): ## Added confs
+                    for j, (output,conf) in enumerate(zip(outputs,confs)):
                         
                         bbox = output[0:4]
                         id = output[4]
                         cls = output[5]
-                       ## conf = output[6] ## We don't have this
+                    #    conf = output[6] ## Don't have this in aban
+
 
                         ## Added
                         c = int(cls)  # integer class
                         label = f'{id} {names[c]} {conf:.2f}'
                         if c ==0 or c == 24 or c == 26 or c == 28 or c == 63 or c == 64: ## Filter annotation
                             annotator.box_label(bbox, label, color=coloration[j])
-                      
-                        if save_txt:
+                            
+                        if save_txt and coloration[j] == (0,45,255): ## Added
                             # to MOT format
                             bbox_left = output[0]
                             bbox_top = output[1]
@@ -280,11 +311,12 @@ def run(
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 save_one_box(np.array(bbox, dtype=np.int16), imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
-                            
+                 
             else:
                 LOGGER.info('No detections') ## Added
                 #tracker_list[i].tracker.pred_n_update_all_tracks()
-                
+
+# --------------------------------------------------------------
             # Stream results
             im0 = annotator.result()
             if show_vid:
@@ -295,7 +327,6 @@ def run(
                 cv2.imshow(str(p), im0)
                 if cv2.waitKey(1) == ord('q'):  # 1 millisecond
                     exit()
-
             # Save results (image with detections)
             if save_vid:
                 if vid_path[i] != save_path:  # new video
@@ -311,12 +342,10 @@ def run(
                     save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                     vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                 vid_writer[i].write(im0)
-
             prev_frames[i] = curr_frames[i]
-            
-        # Print total time (preprocessing + inference + NMS + tracking)
+          # Print total time (preprocessing + inference + NMS + tracking)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{sum([dt.dt for dt in dt if hasattr(dt, 'dt')]) * 1E3:.1f}ms")
-        print("FFF")
+
     # Print results
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
     LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms {tracking_method} update per image at shape {(1, 3, *imgsz)}' % t)
@@ -329,7 +358,7 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov8s-seg.pt', help='model.pt path(s)')
+    parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--reid-weights', type=Path, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
     parser.add_argument('--tracking-method', type=str, default='bytetrack', help='strongsort, ocsort, bytetrack')
     parser.add_argument('--tracking-config', type=Path, default=None)
