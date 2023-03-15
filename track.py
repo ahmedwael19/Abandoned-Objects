@@ -220,6 +220,9 @@ def run(
                 with dt[3]:
                    # outputs = tracker_list[i].update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0) # outputs = x1, x2, y1, y2, track_id, class_id
                     outputs= tracker_list[i].update(det.cpu(), im0) ## Correct??
+                    while len(outputs) == 0: ## Fixing bug with strongsort
+                        outputs= tracker_list[i].update(det.cpu(), im0) ## Correct??
+
                     outputs= np.array(outputs)
                     outputs = outputs[::-1]
                     outputs = (outputs)[:,:-1]
