@@ -43,6 +43,18 @@ from yolov8.ultralytics.yolo.utils.plotting import Annotator, colors
 
 from trackers.multi_tracker_zoo import create_tracker
 
+## DataBase Code
+import psycopg2
+from datetime import datetime, timezone
+
+print('Connecting to the PostgreSQL database...')
+conn = psycopg2.connect(
+    host="localhost",
+    database="action_activity",
+    user="postgres",
+    password=" ")
+cur = conn.cursor()
+
 
 @torch.no_grad()
 def run(
@@ -276,7 +288,28 @@ def run(
                                 (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
                             color = colors(c, True)
                             annotator.box_label(bbox, label, color=color)
-                            
+                        if save_txt and color[j] == (0,45,255):
+                            # to MOT format
+                            bbox_left = int(output[0])
+                            bbox_top = int(output[1])
+                            bbox_w = int(output[2] - output[0])
+                            bbox_h = int(output[3] - output[1])
+                            conf = round(float(conf),2)
+                            frame = int(frame)
+                            id = int(id)
+                            dt00 = datetime.now(timezone.utc)
+                            ## Action type --> 1 for abandon , 2 for abnormal , 3 for activity
+                            cam_id= 1
+                            uid = str(frame)  + str(cam_id) + '1' +  str(c)  + str(1000)
+                            # Write MOT compliant results to file
+                            with open(txt_path, 'a') as f:
+                                f.write(('%s ' * 11 + '\n') % (i + 1, id, names[c] , bbox_left,  # MOT format
+                                                               bbox_top, bbox_w, bbox_h, conf, -1, -1, -1))
+                            ## Insert into Database
+                            #   cur.execute("INSERT INTO full_outputs (uid , frame_id , cam_id , lab_id , object_id , action_type , class, bb_left , bb_top , bb_width , bb_height, pred_conf , time_stamp)\
+                            #   VALUES({},{},{},{},{},{},{},{},{},{},{},{},{})".format(-1   ,  frame     , -1   ,  -1    , id        , 'abandon'   , names[c] , bbox_left, bbox_top     , bbox_w       , bbox_h, conf   ,  str(dt) ) )
+                            #   conn.commit()
+
                             if save_trajectories and tracking_method == 'strongsort':
                                 q = output[7]
                                 tracker_list[i].trajectory(im0, q, color=color)
@@ -319,7 +352,6 @@ def run(
             
         # Print total time (preprocessing + inference + NMS + tracking)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{sum([dt.dt for dt in dt if hasattr(dt, 'dt')]) * 1E3:.1f}ms")
-        print("FFF")
     # Print results
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
     LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms {tracking_method} update per image at shape {(1, 3, *imgsz)}' % t)
@@ -328,7 +360,9 @@ def run(
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
         strip_optimizer(yolo_weights)  # update model (to fix SourceChangeWarning)
-
+    ## Close database connection
+    cur.close()
+    conn.close()
 
 def parse_opt():
     parser = argparse.ArgumentParser()
