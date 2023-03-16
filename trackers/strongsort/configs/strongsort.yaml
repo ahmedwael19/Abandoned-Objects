@@ -1,10 +1,10 @@
-strongsort:
+ 9strongsort:
   ecc: true
   ema_alpha: 0.8962157769329083
   max_age: 40
   max_dist: 0.3
   max_iou_dist: 0.7
-  max_unmatched_preds: 9
+  max_unmatched_preds:
   mc_lambda: 0.995
   n_init: 3
   nn_budget: 100
